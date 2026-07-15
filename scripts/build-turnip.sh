@@ -1,51 +1,83 @@
 #!/bin/bash -e
 
-# Define colors for terminal output
+# ==========================================
+# Turnip-730-Optimize Build Script
+# Author : VanezZa
+# Mesa   : 25.1.0
+# Target : Qualcomm Adreno 730
+# ==========================================
+
 green='\033[0;32m'
 red='\033[0;31m'
+yellow='\033[1;33m'
 nocolor='\033[0m'
 
-# Define Android NDK version and download URL
+# Android NDK
 ndkdir="android-ndk-r30-beta1"
 ndkver="https://dl.google.com/android/repository/${ndkdir}-linux.zip"
 sdkver="34"
 
-# Define Mesa version and download URL
+# Mesa
 mesadir="mesa-25.1.0"
 mesaver="https://archive.mesa3d.org/mesa-25.1.0.tar.xz"
 
-# Define working directories
-workdir="$(pwd)/turnip_workdir"         # Base directory for all operations      # Directory to create the Magisk module
+# Workspace
+workdir="$(pwd)/turnip_workdir"
 
-DRIVER_FILE="vulkan.ad0730.so"          # Output Vulkan Driver (emulator)
-META_FILE="meta.json"                   # Metadata
+# Output
+DRIVER_FILE="vulkan.ad0730.so"
+META_FILE="meta.json"
+ZIP_FILE_EMULATOR="Turnip-25.1.0-R1-Adreno730.zip"
 
-ZIP_FILE_EMULATOR="Turnip-25.1.0-EMULATOR.zip" 
+# Required packages
+deps="curl unzip tar meson ninja patchelf python3 flex bison zip glslangValidator"
 
-# List of required packages to build the Turnip driver
-deps="meson ninja patchelf unzip curl pip flex bison zip glslang"
 clear
 
-echo "Checking system for required dependencies..."
+echo "=========================================="
+echo "      Turnip-730-Optimize Builder"
+echo "=========================================="
+echo ""
+echo "Mesa Version : 25.1.0"
+echo "Android API : $sdkver"
+echo "GPU Target  : Adreno 730"
+echo ""
 
-# Check for required dependencies 
+echo "Checking required packages..."
+echo ""
+
+deps_missing=0
+
 for deps_chk in $deps; do
-
-    sleep 0.5
     if command -v "$deps_chk" >/dev/null 2>&1; then
-        echo -e "$green - $deps_chk found $nocolor"
+        echo -e "$green✓ $deps_chk$nocolor"
     else
-        echo -e "$red - $deps_chk not found, cannot continue. $nocolor"
+        echo -e "$red✗ Missing : $deps_chk$nocolor"
         deps_missing=1
-
-        if [ "$deps_missing" == "1" ]; then
-            echo "Missing dependencies, installing them now..." $'\n'
-            sudo apt install -y meson-1.5 patchelf unzip curl python3-pip flex bison zip python3-mako glslang-tools vulkan-tools python-is-python3 &> /dev/null
-        fi
     fi
 done
 
-sleep 1.5
+if [ "$deps_missing" = "1" ]; then
+    echo ""
+    echo -e "$yellow Installing missing packages...$nocolor"
+
+    sudo apt update
+    sudo apt install -y \
+        curl \
+        unzip \
+        tar \
+        meson \
+        ninja-build \
+        patchelf \
+        python3 \
+        python3-pip \
+        flex \
+        bison \
+        zip \
+        glslang-tools
+fi
+
+sleep 1
 clear
 
 # Clean work directory if it exists
@@ -56,31 +88,46 @@ if [ -d "$workdir" ]; then
 fi
 
 echo "Creating and entering the work directory..." $'\n'
-mkdir -p "$workdir" && cd "$_"
 
+mkdir -p "$workdir"
+cd "$workdir"
+
+# ---------------------------------------
 # Download Android NDK
+# ---------------------------------------
+
 echo "Downloading Android NDK..." $'\n'
-curl -L "$mesaver" -o "$mesadir.tar.xz" &> /dev/null
+
+curl -L "$ndkver" -o "$ndkdir.zip" &> /dev/null
 
 clear
 
 echo "Extracting Android NDK..." $'\n'
-tar -xf "$mesadir".tar.xz
 
-# Download Mesa source
-echo "Downloading Latest Mesa source ..." $'\n'
-curl -L "$mesaver" -o "$mesadir.tar.xz"
+unzip "$ndkdir.zip" &> /dev/null
+
+# ---------------------------------------
+# Download Mesa Source
+# ---------------------------------------
+
+echo "Downloading Mesa 25.1.0 source..." $'\n'
+
+curl -L "$mesaver" -o "$mesadir.tar.xz" &> /dev/null
 
 clear
 
 echo "Extracting Mesa source..." $'\n'
-tar -xf "$mesadir.tar.xz"
-cd $mesadir
 
-# Set NDK Clang bin directory
+tar -xf "$mesadir.tar.xz"
+
+cd "$mesadir"
+
+# ---------------------------------------
+# LLVM Toolchain
+# ---------------------------------------
+
 ndk_bin="$workdir/$ndkdir/toolchains/llvm/prebuilt/linux-x86_64/bin"
 
-# Set toolchain variables
 export CC=clang
 export CXX=clang++
 export AR=llvm-ar
@@ -90,28 +137,38 @@ export OBJDUMP=llvm-objdump
 export OBJCOPY=llvm-objcopy
 export LDFLAGS="-fuse-ld=lld"
 
-# Create a temporary directory for fake cc/c++
+# ---------------------------------------
+# Fake CC/C++ wrapper
+# ---------------------------------------
+
 fakecc_dir="$workdir/fake-cc"
 mkdir -p "$fakecc_dir"
 
-# Create symbolic links to NDK-Clang
 ln -sf "$ndk_bin/clang" "$fakecc_dir/cc"
 ln -sf "$ndk_bin/clang++" "$fakecc_dir/c++"
 
-# Prepend both fake-cc and NDK bin to PATH
 export PATH="$fakecc_dir:$ndk_bin:$PATH"
 
 echo "Creating Meson cross file..." $'\n'
 
-cat <<EOF >"android-aarch64.txt"
+cat <<EOF > android-aarch64.txt
 [binaries]
 ar = '$ndk_bin/llvm-ar'
-c = ['ccache', '$ndk_bin/aarch64-linux-android$sdkver-clang', '-Wno-deprecated-declarations', '-Wno-gnu-alignof-expression']
-cpp = ['ccache', '$ndk_bin/aarch64-linux-android$sdkver-clang++', '--start-no-unused-arguments', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables', '-static-libstdc++', '--end-no-unused-arguments', '-Wno-error=c++11-narrowing', '-Wno-deprecated-declarations', '-Wno-gnu-alignof-expression']
+c = ['$ndk_bin/aarch64-linux-android$sdkver-clang',
+     '-Wno-deprecated-declarations',
+     '-Wno-gnu-alignof-expression']
+cpp = ['$ndk_bin/aarch64-linux-android$sdkver-clang++',
+       '-fno-exceptions',
+       '-fno-unwind-tables',
+       '-fno-asynchronous-unwind-tables',
+       '-static-libstdc++',
+       '-Wno-error=c++11-narrowing',
+       '-Wno-deprecated-declarations',
+       '-Wno-gnu-alignof-expression']
 c_ld = '$ndk_bin/ld.lld'
 cpp_ld = '$ndk_bin/ld.lld'
-strip = '$ndk_bin/aarch64-linux-android-strip'
-pkg-config = ['env', 'PKG_CONFIG_LIBDIR=NDKDIR/pkg-config', '/usr/bin/pkg-config']
+strip = '$ndk_bin/llvm-strip'
+pkgconfig = '/usr/bin/pkg-config'
 
 [host_machine]
 system = 'android'
@@ -120,14 +177,17 @@ cpu = 'armv8'
 endian = 'little'
 EOF
 
-cat <<EOF >"native.txt"
-[build_machine]
-c = ['ccache', 'clang']
-cpp = ['ccache', 'clang++']
+cat <<EOF > native.txt
+[binaries]
+c = 'clang'
+cpp = 'clang++'
 ar = 'llvm-ar'
 strip = 'llvm-strip'
 c_ld = 'ld.lld'
 cpp_ld = 'ld.lld'
+pkgconfig = '/usr/bin/pkg-config'
+
+[host_machine]
 system = 'linux'
 cpu_family = 'x86_64'
 cpu = 'x86_64'

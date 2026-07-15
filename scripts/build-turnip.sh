@@ -186,9 +186,7 @@ if ! meson setup build-android-aarch64 \
     -Dglx=disabled \
     -Dllvm=disabled \
     -Dshared-glapi=disabled \
-    -Dvalgrind=disabled \
-    -Dbuild-tests=false \
-    -Ddemos=false \
+    -Dvalgrind=disabled
     -Dstrip=true \
     -Dc_args="$OPTIMIZE_FLAGS -Wno-unused-command-line-argument" \
     -Dcpp_args="$OPTIMIZE_FLAGS -Wno-unused-command-line-argument" \

@@ -1,1 +1,113 @@
+name: Build Turnip
 
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    env:
+      TERM: xterm
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            build-essential \
+            clang \
+            llvm \
+            lld \
+            cmake \
+            ninja-build \
+            pkg-config \
+            patchelf \
+            python3 \
+            python3-pip \
+            python3-venv \
+            python3-mako \
+            python-is-python3 \
+            flex \
+            bison \
+            glslang-tools \
+            vulkan-tools \
+            unzip \
+            zip \
+            wget \
+            curl \
+            git \
+            ccache
+
+      - name: Install Latest Meson
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install "meson>=1.5.0"
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Environment Info
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          echo "===== SYSTEM ====="
+          uname -a
+          echo ""
+          echo "===== MESON ====="
+          which meson || echo "meson not found in PATH"
+          meson --version || echo "meson version check failed"
+          echo ""
+          echo "===== CLANG ====="
+          clang --version
+          echo ""
+          echo "===== NINJA ====="
+          ninja --version
+          echo ""
+          echo "===== NDK will be downloaded during build ====="
+
+      - name: Make build script executable
+        run: chmod +x build-turnip.sh
+
+      - name: Run Build Script
+        run: |
+          export TERM=xterm
+          export PATH="$HOME/.local/bin:$PATH"
+          set -ex
+          ./build-turnip.sh
+
+      - name: Show Output Files
+        if: always()
+        run: |
+          echo "===== GENERATED FILES ====="
+          echo "--- ZIP files ---"
+          find . -name "*.zip" -type f 2>/dev/null || echo "No zip files found"
+          echo ""
+          echo "--- SO files ---"
+          find . -name "*.so" -type f 2>/dev/null || echo "No so files found"
+          echo ""
+          echo "--- Log files ---"
+          find . -name "meson_log" -o -name "meson-log.txt" -o -name "ninja_log" 2>/dev/null || echo "No log files found"
+          echo ""
+          echo "--- Workdir contents ---"
+          ls -la turnip_workdir/ 2>/dev/null || echo "turnip_workdir not found"
+
+      - name: Upload Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Build-Logs
+          path: |
+            **/meson_log
+            **/meson-log.txt
+            **/ninja_log
+          if-no-files-found: ignore
+
+      - name: Upload Turnip Driver
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: turnip-25.1.0-R1-EMULATOR   # ← เปลี่ยนชื่อ artifact ที่โหลดลงมา
+          path: |
+            turnip_workdir/turnip-25.1.0-R1-EMULATOR.zip   # ← ชื่อไฟล์ตรงกับในสคริปต์
+          if-no-files-found: error

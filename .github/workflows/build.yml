@@ -19,15 +19,22 @@ jobs:
           echo "===== FILES IN REPO ====="
           ls -la
           echo ""
+          echo "===== FILES IN scripts/ ====="
+          ls -la scripts/ 2>/dev/null || echo "scripts/ directory not found"
+          echo ""
           echo "===== CHECKING FOR SCRIPT ====="
-          if [ -f "build-turnip.sh" ]; then
+          if [ -f "scripts/build-turnip.sh" ]; then
+            echo "✅ Found scripts/build-turnip.sh"
+          elif [ -f "build-turnip.sh" ]; then
             echo "✅ Found build-turnip.sh"
+          elif [ -f "scripts/VanezZa.sh" ]; then
+            echo "✅ Found scripts/VanezZa.sh"
           elif [ -f "VanezZa.sh" ]; then
             echo "✅ Found VanezZa.sh"
           else
             echo "❌ No build script found!"
-            echo "Available .sh files:"
-            ls -la *.sh 2>/dev/null || echo "No .sh files found"
+            echo "Searching for .sh files..."
+            find . -name "*.sh" -type f 2>/dev/null || echo "No .sh files found anywhere"
             exit 1
           fi
 
@@ -85,10 +92,18 @@ jobs:
 
       - name: Make build script executable
         run: |
-          if [ -f "build-turnip.sh" ]; then
+          if [ -f "scripts/build-turnip.sh" ]; then
+            chmod +x scripts/build-turnip.sh
+            echo "✅ Made scripts/build-turnip.sh executable"
+          elif [ -f "build-turnip.sh" ]; then
             chmod +x build-turnip.sh
+            echo "✅ Made build-turnip.sh executable"
+          elif [ -f "scripts/VanezZa.sh" ]; then
+            chmod +x scripts/VanezZa.sh
+            echo "✅ Made scripts/VanezZa.sh executable"
           elif [ -f "VanezZa.sh" ]; then
             chmod +x VanezZa.sh
+            echo "✅ Made VanezZa.sh executable"
           else
             echo "❌ No build script found!"
             exit 1
@@ -98,9 +113,20 @@ jobs:
         run: |
           export TERM=xterm
           export PATH="$HOME/.local/bin:$PATH"
-          if [ -f "build-turnip.sh" ]; then
+          echo "Current directory: $(pwd)"
+          echo ""
+          
+          if [ -f "scripts/build-turnip.sh" ]; then
+            echo "Running scripts/build-turnip.sh..."
+            cd scripts && ./build-turnip.sh
+          elif [ -f "build-turnip.sh" ]; then
+            echo "Running build-turnip.sh..."
             ./build-turnip.sh
+          elif [ -f "scripts/VanezZa.sh" ]; then
+            echo "Running scripts/VanezZa.sh..."
+            cd scripts && ./VanezZa.sh
           elif [ -f "VanezZa.sh" ]; then
+            echo "Running VanezZa.sh..."
             ./VanezZa.sh
           else
             echo "❌ No build script found!"
@@ -113,6 +139,13 @@ jobs:
           echo "========================================="
           echo "===== GENERATED FILES ====="
           echo "========================================="
+          echo ""
+          echo "--- Current directory ---"
+          pwd
+          ls -la
+          echo ""
+          echo "--- scripts/ directory ---"
+          ls -la scripts/ 2>/dev/null || echo "scripts/ not found"
           echo ""
           echo "--- ZIP files ---"
           find . -name "*.zip" -type f 2>/dev/null || echo "No zip files found"
@@ -128,15 +161,13 @@ jobs:
             echo "===== BUILD LOG START ====="
             cat build.log
             echo "===== BUILD LOG END ====="
+          elif [ -f "scripts/build.log" ]; then
+            echo "===== BUILD LOG START (from scripts/) ====="
+            cat scripts/build.log
+            echo "===== BUILD LOG END ====="
           else
             echo "build.log not found"
           fi
-          echo ""
-          echo "--- Meson log ---"
-          find . -name "meson-log.txt" -exec cat {} \; 2>/dev/null || echo "meson-log.txt not found"
-          echo ""
-          echo "--- Ninja log ---"
-          find . -name "ninja_log" -exec cat {} \; 2>/dev/null || echo "ninja_log not found"
 
       - name: Upload Logs
         if: always()
@@ -145,6 +176,7 @@ jobs:
           name: Build-Logs-Complete
           path: |
             build.log
+            scripts/build.log
             **/meson_log
             **/meson-log.txt
             **/ninja_log
@@ -158,4 +190,5 @@ jobs:
           name: turnip-25.1.0-R1-EMULATOR
           path: |
             turnip_workdir/turnip-*.zip
+            scripts/turnip_workdir/turnip-*.zip
           if-no-files-found: warn

@@ -20,18 +20,18 @@ workdir="$(pwd)/turnip_workdir"
 
 DRIVER_FILE="vulkan.turnip.so"
 META_FILE="meta.json"
-ZIP_FILE_EMULATOR="turnip-25.1.0-R1-EMULATOR.zip"
+ZIP_FILE_EMULATOR="turnip-25.1.0-R1-Adreno730-Optimized.zip"
 
 # Log file
 LOG_FILE="build.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 # List of required packages
-deps="meson ninja patchelf unzip curl flex bison zip glslang-tools"
+deps="meson ninja patchelf unzip curl flex bison zip glslangValidator"
 
 clear
 echo "============================================="
-echo "  Turnip Driver Builder - Emulator Only"
+echo "  Turnip Driver Builder - Adreno 730 Optimized"
 echo "  Mesa Version: 25.1.0 R1"
 echo "  Started at: $(date)"
 echo "============================================="
@@ -55,7 +55,11 @@ if [ "$deps_missing" == "1" ]; then
     echo -e "$yellow Missing dependencies detected, installing them now... $nocolor"
     sudo apt update
     sudo apt install -y meson ninja-build patchelf unzip curl python3-pip \
-        flex bison zip python3-mako glslang-tools vulkan-tools python-is-python3
+        flex bison zip python3-mako vulkan-tools python-is-python3
+    
+    if ! command -v glslangValidator >/dev/null 2>&1; then
+        sudo apt install -y glslang-tools || sudo apt install -y glslang-dev
+    fi
     echo "Dependencies installation completed."
 fi
 
@@ -77,7 +81,6 @@ echo ""
 echo "Downloading Android NDK ($ndkdir)..."
 if ! curl -L "$ndkver" --output "$ndkdir.zip" 2>&1; then
     echo -e "$red Failed to download NDK $nocolor"
-    echo "URL: $ndkver"
     exit 1
 fi
 echo -e "$green ✓ NDK downloaded successfully $nocolor"
@@ -95,7 +98,6 @@ echo ""
 echo "Downloading Mesa source ($mesadir)..."
 if ! curl -L "$mesaver" --output "$mesadir.zip" 2>&1; then
     echo -e "$red Failed to download Mesa $nocolor"
-    echo "URL: $mesaver"
     exit 1
 fi
 echo -e "$green ✓ Mesa downloaded successfully $nocolor"
@@ -119,7 +121,7 @@ if [ ! -d "$ndk_bin" ]; then
 fi
 echo -e "$green ✓ NDK bin found: $ndk_bin $nocolor"
 
-# Set toolchain variables - ใช้ clang โดยตรง ไม่ต้อง static-libstdc++
+# Set toolchain variables
 export CC=clang
 export CXX=clang++
 export AR=llvm-ar
@@ -137,8 +139,6 @@ echo ""
 echo "Verifying toolchain..."
 if ! command -v aarch64-linux-android${sdkver}-clang >/dev/null 2>&1; then
     echo -e "$red ✗ aarch64-linux-android${sdkver}-clang not found $nocolor"
-    echo "Available clang tools:"
-    ls -la "$ndk_bin"/*clang* 2>/dev/null || echo "No clang tools found"
     exit 1
 fi
 echo -e "$green ✓ Toolchain verified $nocolor"
@@ -146,7 +146,7 @@ echo -e "$green ✓ Toolchain verified $nocolor"
 echo ""
 echo "Creating Meson cross file..."
 
-# แก้ไข cross file - ลบ -static-libstdc++ ออก (ไม่รองรับ NDK r30)
+# Cross file - ไม่มี static-libstdc++
 cat <<EOF >"android-aarch64.txt"
 [binaries]
 ar = '$ndk_bin/llvm-ar'
@@ -165,7 +165,24 @@ EOF
 
 echo -e "$green ✓ Cross file created: android-aarch64.txt $nocolor"
 echo ""
-echo "Generating build files with Meson..."
+echo "Generating build files with Meson (Adreno 730 Optimized)..."
+
+# =============================================
+# 🔥 Adreno 730 OPTIMIZATION FLAGS 🔥
+# =============================================
+# -O3                    : High optimization
+# -march=armv8.2a+fp16   : Adreno 730 supports FP16
+# -mcpu=cortex-x2        : Optimize for X2 core (SD 8 Gen 1)
+# -ffast-math            : Faster math (less precise)
+# -funroll-loops         : Unroll loops for speed
+# -fomit-frame-pointer   : Less overhead
+# -fno-stack-protector   : Remove security checks (faster)
+# -fno-math-errno        : Faster math
+# -DNDEBUG               : Remove asserts
+# -D_FORTIFY_SOURCE=0    : Disable fortify
+# =============================================
+
+OPTIMIZE_FLAGS="-O3 -march=armv8.2a+fp16 -mcpu=cortex-x2 -ffast-math -funroll-loops -fomit-frame-pointer -fno-stack-protector -fno-math-errno -DNDEBUG -D_FORTIFY_SOURCE=0"
 
 if ! meson setup build-android-aarch64 \
     --cross-file "$workdir/$mesadir/android-aarch64.txt" \
@@ -177,22 +194,40 @@ if ! meson setup build-android-aarch64 \
     -Dvulkan-drivers=freedreno \
     -Dfreedreno-kmds=kgsl \
     -Degl=disabled \
-    -Dstrip=true 2>&1; then
+    -Dgles1=disabled \
+    -Dgles2=disabled \
+    -Dopengl=false \
+    -Dgbm=disabled \
+    -Dx11=disabled \
+    -Dwayland=disabled \
+    -Ddri3=disabled \
+    -Dglx=disabled \
+    -Dosmesa=disabled \
+    -Dllvm=disabled \
+    -Dshared-glapi=disabled \
+    -Dasm=disabled \
+    -Dvalgrind=disabled \
+    -Dbuild-tests=disabled \
+    -Dbuild-docs=disabled \
+    -Ddemos=disabled \
+    -Dstrip=true \
+    -Dc_args="$OPTIMIZE_FLAGS -Wno-unused-command-line-argument" \
+    -Dcpp_args="$OPTIMIZE_FLAGS -Wno-unused-command-line-argument" \
+    -Dc_link_args="-flto -Wl,-O3 -Wl,--gc-sections -Wl,--as-needed" \
+    -Dcpp_link_args="-flto -Wl,-O3 -Wl,--gc-sections -Wl,--as-needed" 2>&1; then
     echo -e "$red Meson setup failed! $nocolor"
-    echo "Check meson-log.txt for details"
     cat meson-log.txt 2>/dev/null || echo "meson-log.txt not found"
     exit 1
 fi
 
 echo -e "$green ✓ Meson setup completed successfully $nocolor"
 echo ""
-echo "Compiling build files with Ninja..."
+echo "Compiling build files with Ninja (Adreno 730 Optimized)..."
+echo "Using $(nproc) cores..."
 
-# Compile build files using Ninja - เพิ่ม -v เพื่อดู error ชัดเจน
 if ! ninja -C build-android-aarch64 -j$(nproc) 2>&1; then
     echo -e "$red Ninja build failed! $nocolor"
-    echo "Checking build error..."
-    # แสดง error สุดท้าย
+    echo "Showing last 50 lines of error..."
     ninja -C build-android-aarch64 -j1 2>&1 | tail -50
     exit 1
 fi
@@ -204,14 +239,16 @@ echo ""
 driver_source="$workdir/$mesadir/build-android-aarch64/src/freedreno/vulkan/libvulkan_freedreno.so"
 if [ ! -f "$driver_source" ]; then
     echo -e "$red Build failed! libvulkan_freedreno.so not found $nocolor"
-    echo "Checked path: $driver_source"
-    echo ""
-    echo "Contents of build directory:"
     ls -la "$workdir/$mesadir/build-android-aarch64/src/freedreno/vulkan/" 2>/dev/null || echo "Directory not found"
     exit 1
 fi
 
 echo -e "$green ✓ Driver built successfully: $driver_source $nocolor"
+
+# Check file size
+FILE_SIZE=$(stat -c%s "$driver_source" 2>/dev/null || stat -f%z "$driver_source" 2>/dev/null)
+echo "Driver size: $FILE_SIZE bytes"
+
 echo ""
 
 # Copy driver to work directory
@@ -222,7 +259,6 @@ if ! cp "$driver_source" "$workdir/$DRIVER_FILE" 2>&1; then
 fi
 
 cd "$workdir"
-echo "Changed to work directory: $(pwd)"
 
 # Verify driver exists
 if [ ! -f "$DRIVER_FILE" ]; then
@@ -233,18 +269,21 @@ fi
 echo ""
 echo "Creating meta.json for emulator..."
 
-# Create meta.json file for turnip emulator
 cat <<EOF > "$META_FILE"
 {
   "schemaVersion": 1,
-  "name": "Turnip Driver 25.1.0 R1",
-  "description": "Optimized for Adreno 6xx-7xx-8xx GPUs",
+  "name": "Turnip Driver 25.1.0 Adreno 730 Optimized",
+  "description": "Optimized for Adreno 730 | Snapdragon 8 Gen 1 | Performance Focused",
   "author": "VanezZa",
-  "packageVersion": "R1",
+  "packageVersion": "R1-Optimized",
   "vendor": "Mesa3D",
   "driverVersion": "Vulkan 1.3",
   "minApi": 34,
-  "libraryName": "vulkan.turnip.so"
+  "libraryName": "vulkan.turnip.so",
+  "features": {
+    "optimizedFor": "Adreno 730",
+    "flags": "-O3 -march=armv8.2a+fp16 -mcpu=cortex-x2 -ffast-math -funroll-loops"
+  }
 }
 EOF
 
@@ -257,7 +296,6 @@ echo -e "$green ✓ meta.json created $nocolor"
 echo ""
 echo "Packing driver files into emulator zip..."
 
-# Zip the turnip .so file and meta.json file
 if ! zip "$ZIP_FILE_EMULATOR" "$DRIVER_FILE" "$META_FILE" >/dev/null 2>&1; then
     echo -e "$red Error: Zipping driver files failed. $nocolor"
     exit 1
@@ -274,18 +312,35 @@ echo "============================================="
 echo -e "$green ✓ Build Finished Successfully! $nocolor"
 echo "============================================="
 echo ""
+echo -e "$green ════════════════════════════════════════ $nocolor"
+echo -e "$green  🔥 Adreno 730 OPTIMIZED Driver 🔥 $nocolor"
+echo -e "$green ════════════════════════════════════════ $nocolor"
+echo ""
 echo -e "$green Emulator Driver:$nocolor"
 echo "  $workdir/$ZIP_FILE_EMULATOR"
+echo ""
+echo -e "$yellow Optimizations applied:$nocolor"
+echo "  • -O3 (High optimization)"
+echo "  • -march=armv8.2a+fp16 (Adreno 730 FP16 support)"
+echo "  • -mcpu=cortex-x2 (SD 8 Gen 1 optimized)"
+echo "  • -ffast-math (Faster math)"
+echo "  • -funroll-loops (Loop unrolling)"
+echo "  • -fomit-frame-pointer (Less overhead)"
+echo "  • -flto (Link Time Optimization)"
+echo "  • Disabled: GL, EGL, GBM, X11, Wayland, LLVM"
 echo ""
 echo "  Finished at: $(date)"
 echo "============================================="
 
-# Cleanup temporary files
-echo ""
-echo "Cleaning up temporary files..."
+# Cleanup
 rm -f "$DRIVER_FILE" "$META_FILE"
 
-echo "Build completed. Exiting."
+echo ""
+echo -e "$yellow 💡 Tips for Winlator/Eden:$nocolor"
+echo "  1. Set environment: TU_DEBUG=perf"
+echo "  2. Set: MESA_GL_THREAD_COUNT=auto"
+echo "  3. Disable: TU_PERF_WARN=0"
+echo "  4. Enable: MESA_GLSL_CACHE_MAX_SIZE=512MB"
 echo ""
 
 exit 0

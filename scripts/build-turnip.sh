@@ -181,28 +181,28 @@ if ! meson setup build-android-aarch64 \
     -Dgallium-drivers= \
     -Dvulkan-drivers=freedreno \
     -Dfreedreno-kmds=kgsl \
-    -Degl=disabled \
-    -Dgles1=disabled \
-    -Dgles2=disabled \
-    -Dgbm=disabled \
-    -Dglx=disabled \
-    -Dllvm=disabled \
-    -Dvalgrind=disabled \
-    -Dbuild-tests=disabled \
+    -Degl=false \
+    -Dgbm=false \
+    -Dglx=false \
+    -Dosmesa=false \
+    -Dllvm=false \
+    -Dshared-glapi=false \
+    -Dvalgrind=false \
+    -Dbuild-tests=false \
+    -Ddemos=false \
     -Dstrip=true \
     -Dc_args="$OPTIMIZE_FLAGS -Wno-unused-command-line-argument" \
     -Dcpp_args="$OPTIMIZE_FLAGS -Wno-unused-command-line-argument" \
     -Dc_link_args="-flto -Wl,-O3 -Wl,--gc-sections -Wl,--as-needed" \
     -Dcpp_link_args="-flto -Wl,-O3 -Wl,--gc-sections -Wl,--as-needed" 2>&1; then
     echo -e "$red Meson setup failed! $nocolor"
-    echo ""
-    echo "Showing meson-log.txt contents:"
-    if [ -f "build-android-aarch64/meson-log.txt" ]; then
-        cat build-android-aarch64/meson-log.txt
+    echo "Showing meson-log.txt contents..."
+    if [ -f meson-log.txt ]; then
+        cat meson-log.txt
     else
         echo "meson-log.txt not found"
         echo "Trying to find log file..."
-        find . -name "meson-log.txt" -exec cat {} \;
+        find . -name "*.txt" -o -name "*.log" 2>/dev/null | head -20
     fi
     exit 1
 fi
@@ -214,8 +214,8 @@ echo "Using $(nproc) cores..."
 
 if ! ninja -C build-android-aarch64 -j$(nproc) 2>&1; then
     echo -e "$red Ninja build failed! $nocolor"
-    echo "Showing last 100 lines of error..."
-    ninja -C build-android-aarch64 -j1 2>&1 | tail -100
+    echo "Showing last 50 lines of error..."
+    ninja -C build-android-aarch64 -j1 2>&1 | tail -50
     exit 1
 fi
 
@@ -226,8 +226,7 @@ echo ""
 driver_source="$workdir/$mesadir/build-android-aarch64/src/freedreno/vulkan/libvulkan_freedreno.so"
 if [ ! -f "$driver_source" ]; then
     echo -e "$red Build failed! libvulkan_freedreno.so not found $nocolor"
-    echo "Checking other possible locations..."
-    find "$workdir/$mesadir/build-android-aarch64" -name "*.so" -type f 2>/dev/null | head -20
+    ls -la "$workdir/$mesadir/build-android-aarch64/src/freedreno/vulkan/" 2>/dev/null || echo "Directory not found"
     exit 1
 fi
 
@@ -236,7 +235,6 @@ echo -e "$green ✓ Driver built successfully: $driver_source $nocolor"
 # Check file size
 FILE_SIZE=$(stat -c%s "$driver_source" 2>/dev/null || stat -f%z "$driver_source" 2>/dev/null)
 echo "Driver size: $FILE_SIZE bytes"
-
 echo ""
 
 # Copy driver to work directory
@@ -315,7 +313,7 @@ echo "  • -ffast-math (Faster math)"
 echo "  • -funroll-loops (Loop unrolling)"
 echo "  • -fomit-frame-pointer (Less overhead)"
 echo "  • -flto (Link Time Optimization)"
-echo "  • Disabled: GL, EGL, GBM, GLX, LLVM"
+echo "  • Disabled: GLX, EGL, GBM, OS Mesa, LLVM"
 echo ""
 echo "  Finished at: $(date)"
 echo "============================================="
@@ -327,9 +325,8 @@ echo ""
 echo -e "$yellow 💡 Tips for Winlator/Eden:$nocolor"
 echo "  1. Set environment: TU_DEBUG=perf"
 echo "  2. Set: MESA_GL_THREAD_COUNT=auto"
-echo "  3. Set: MESA_VK_WSI_PRESENT_MODE=mailbox"
-echo "  4. Set: TU_PERF_WARN=0"
-echo "  5. Set: MESA_GLSL_CACHE_MAX_SIZE=512MB"
+echo "  3. Disable: TU_PERF_WARN=0"
+echo "  4. Enable: MESA_GLSL_CACHE_MAX_SIZE=512MB"
 echo ""
 
 exit 0

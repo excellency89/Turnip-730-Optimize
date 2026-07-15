@@ -1,3 +1,25 @@
+██████████████████████████████████████████
+
+          TURNIP-730-OPTIMIZE
+
+ Optimized Mesa Turnip Vulkan Driver
+     Qualcomm Snapdragon 8 Gen 1
+           Adreno 730 Edition
+
+██████████████████████████████████████████
+
+
+
+
+
+
+
+
+
+
+
+
+
 <div align="center">
 
 # 🚀 Turnip-730-Optimize

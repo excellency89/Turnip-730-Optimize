@@ -3,6 +3,7 @@
 # Define colors for terminal output
 green='\033[0;32m'
 red='\033[0;31m'
+yellow='\033[1;33m'
 nocolor='\033[0m'
 
 # Define Android NDK version and download URL
@@ -19,7 +20,11 @@ workdir="$(pwd)/turnip_workdir"
 
 DRIVER_FILE="vulkan.turnip.so"
 META_FILE="meta.json"
-ZIP_FILE_EMULATOR="Turnip-25.1.0-R1.zip"
+ZIP_FILE_EMULATOR="turnip-25.1.0-R1-EMULATOR.zip"
+
+# Log file
+LOG_FILE="build.log"
+exec > >(tee -a "$LOG_FILE") 2>&1
 
 # List of required packages
 deps="meson ninja patchelf unzip curl flex bison zip glslang-tools"
@@ -27,6 +32,8 @@ deps="meson ninja patchelf unzip curl flex bison zip glslang-tools"
 clear
 echo "============================================="
 echo "  Turnip Driver Builder - Emulator Only"
+echo "  Mesa Version: 25.1.0 R1"
+echo "  Started at: $(date)"
 echo "============================================="
 echo ""
 echo "Checking system for required dependencies..."
@@ -45,7 +52,7 @@ done
 
 if [ "$deps_missing" == "1" ]; then
     echo ""
-    echo "Missing dependencies detected, installing them now..."
+    echo -e "$yellow Missing dependencies detected, installing them now... $nocolor"
     sudo apt update
     sudo apt install -y meson ninja-build patchelf unzip curl python3-pip \
         flex bison zip python3-mako glslang-tools vulkan-tools python-is-python3
@@ -68,36 +75,38 @@ mkdir -p "$workdir" && cd "$_"
 # Download Android NDK
 echo ""
 echo "Downloading Android NDK ($ndkdir)..."
-curl -L "$ndkver" --output "$ndkdir.zip"
-if [ $? -ne 0 ]; then
+if ! curl -L "$ndkver" --output "$ndkdir.zip" 2>&1; then
     echo -e "$red Failed to download NDK $nocolor"
+    echo "URL: $ndkver"
     exit 1
 fi
+echo -e "$green ✓ NDK downloaded successfully $nocolor"
 
 clear
 echo "Extracting Android NDK..."
-unzip -q "$ndkdir.zip"
-if [ $? -ne 0 ]; then
+if ! unzip -q "$ndkdir.zip" 2>&1; then
     echo -e "$red Failed to extract NDK $nocolor"
     exit 1
 fi
+echo -e "$green ✓ NDK extracted successfully $nocolor"
 
 # Download Mesa source
 echo ""
 echo "Downloading Mesa source ($mesadir)..."
-curl -L "$mesaver" --output "$mesadir.zip"
-if [ $? -ne 0 ]; then
+if ! curl -L "$mesaver" --output "$mesadir.zip" 2>&1; then
     echo -e "$red Failed to download Mesa $nocolor"
+    echo "URL: $mesaver"
     exit 1
 fi
+echo -e "$green ✓ Mesa downloaded successfully $nocolor"
 
 clear
 echo "Extracting Mesa source..."
-unzip -q "$mesadir.zip"
-if [ $? -ne 0 ]; then
+if ! unzip -q "$mesadir.zip" 2>&1; then
     echo -e "$red Failed to extract Mesa $nocolor"
     exit 1
 fi
+echo -e "$green ✓ Mesa extracted successfully $nocolor"
 
 cd "$mesadir"
 echo "Entered Mesa directory: $(pwd)"
@@ -108,8 +117,9 @@ if [ ! -d "$ndk_bin" ]; then
     echo -e "$red NDK bin directory not found: $ndk_bin $nocolor"
     exit 1
 fi
+echo -e "$green ✓ NDK bin found: $ndk_bin $nocolor"
 
-# Set toolchain variables
+# Set toolchain variables - ใช้ clang โดยตรง ไม่ต้อง static-libstdc++
 export CC=clang
 export CXX=clang++
 export AR=llvm-ar
@@ -122,14 +132,26 @@ export LDFLAGS="-fuse-ld=lld"
 # Prepend NDK bin to PATH
 export PATH="$ndk_bin:$PATH"
 
+# Verify toolchain
+echo ""
+echo "Verifying toolchain..."
+if ! command -v aarch64-linux-android${sdkver}-clang >/dev/null 2>&1; then
+    echo -e "$red ✗ aarch64-linux-android${sdkver}-clang not found $nocolor"
+    echo "Available clang tools:"
+    ls -la "$ndk_bin"/*clang* 2>/dev/null || echo "No clang tools found"
+    exit 1
+fi
+echo -e "$green ✓ Toolchain verified $nocolor"
+
 echo ""
 echo "Creating Meson cross file..."
 
+# แก้ไข cross file - ลบ -static-libstdc++ ออก (ไม่รองรับ NDK r30)
 cat <<EOF >"android-aarch64.txt"
 [binaries]
 ar = '$ndk_bin/llvm-ar'
 c = ['$ndk_bin/aarch64-linux-android$sdkver-clang', '-Wno-deprecated-declarations', '-Wno-gnu-alignof-expression']
-cpp = ['$ndk_bin/aarch64-linux-android$sdkver-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables', '-static-libstdc++', '-Wno-error=c++11-narrowing', '-Wno-deprecated-declarations', '-Wno-gnu-alignof-expression']
+cpp = ['$ndk_bin/aarch64-linux-android$sdkver-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables', '-Wno-error=c++11-narrowing', '-Wno-deprecated-declarations', '-Wno-gnu-alignof-expression']
 c_ld = '$ndk_bin/ld.lld'
 cpp_ld = '$ndk_bin/ld.lld'
 strip = '$ndk_bin/aarch64-linux-android-strip'
@@ -141,11 +163,11 @@ cpu = 'armv8'
 endian = 'little'
 EOF
 
-echo "Cross file created: android-aarch64.txt"
+echo -e "$green ✓ Cross file created: android-aarch64.txt $nocolor"
 echo ""
 echo "Generating build files with Meson..."
 
-meson setup build-android-aarch64 \
+if ! meson setup build-android-aarch64 \
     --cross-file "$workdir/$mesadir/android-aarch64.txt" \
     -Dbuildtype=release \
     -Dplatforms=android \
@@ -155,28 +177,27 @@ meson setup build-android-aarch64 \
     -Dvulkan-drivers=freedreno \
     -Dfreedreno-kmds=kgsl \
     -Degl=disabled \
-    -Dstrip=true
-
-if [ $? -ne 0 ]; then
+    -Dstrip=true 2>&1; then
     echo -e "$red Meson setup failed! $nocolor"
+    echo "Check meson-log.txt for details"
+    cat meson-log.txt 2>/dev/null || echo "meson-log.txt not found"
     exit 1
 fi
 
-echo ""
-echo "Meson setup completed successfully."
+echo -e "$green ✓ Meson setup completed successfully $nocolor"
 echo ""
 echo "Compiling build files with Ninja..."
 
-# Compile build files using Ninja
-ninja -C build-android-aarch64 -j$(nproc)
-
-if [ $? -ne 0 ]; then
+# Compile build files using Ninja - เพิ่ม -v เพื่อดู error ชัดเจน
+if ! ninja -C build-android-aarch64 -j$(nproc) 2>&1; then
     echo -e "$red Ninja build failed! $nocolor"
+    echo "Checking build error..."
+    # แสดง error สุดท้าย
+    ninja -C build-android-aarch64 -j1 2>&1 | tail -50
     exit 1
 fi
 
-echo ""
-echo "Ninja build completed successfully."
+echo -e "$green ✓ Ninja build completed successfully $nocolor"
 echo ""
 
 # Check if the driver was built
@@ -184,16 +205,18 @@ driver_source="$workdir/$mesadir/build-android-aarch64/src/freedreno/vulkan/libv
 if [ ! -f "$driver_source" ]; then
     echo -e "$red Build failed! libvulkan_freedreno.so not found $nocolor"
     echo "Checked path: $driver_source"
+    echo ""
+    echo "Contents of build directory:"
+    ls -la "$workdir/$mesadir/build-android-aarch64/src/freedreno/vulkan/" 2>/dev/null || echo "Directory not found"
     exit 1
 fi
 
-echo "Driver built successfully: $driver_source"
+echo -e "$green ✓ Driver built successfully: $driver_source $nocolor"
 echo ""
 
 # Copy driver to work directory
 echo "Copying driver to work directory..."
-cp "$driver_source" "$workdir/$DRIVER_FILE"
-if [ $? -ne 0 ]; then
+if ! cp "$driver_source" "$workdir/$DRIVER_FILE" 2>&1; then
     echo -e "$red Failed to copy driver $nocolor"
     exit 1
 fi
@@ -214,13 +237,13 @@ echo "Creating meta.json for emulator..."
 cat <<EOF > "$META_FILE"
 {
   "schemaVersion": 1,
-  "name": "Freedreno Turnip Driver 25.1.0",
-  "description": "Optimized for Adreno 730",
+  "name": "Turnip Driver 25.1.0 R1",
+  "description": "Optimized for Adreno 6xx-7xx-8xx GPUs",
   "author": "VanezZa",
-  "packageVersion": "3",
+  "packageVersion": "R1",
   "vendor": "Mesa3D",
-  "driverVersion": "Vulkan 3D",
-  "minApi": 27,
+  "driverVersion": "Vulkan 1.3",
+  "minApi": 34,
   "libraryName": "vulkan.turnip.so"
 }
 EOF
@@ -229,6 +252,7 @@ if [ ! -f "$META_FILE" ]; then
     echo -e "$red Failed to create meta.json $nocolor"
     exit 1
 fi
+echo -e "$green ✓ meta.json created $nocolor"
 
 echo ""
 echo "Packing driver files into emulator zip..."
@@ -253,6 +277,7 @@ echo ""
 echo -e "$green Emulator Driver:$nocolor"
 echo "  $workdir/$ZIP_FILE_EMULATOR"
 echo ""
+echo "  Finished at: $(date)"
 echo "============================================="
 
 # Cleanup temporary files
@@ -260,7 +285,6 @@ echo ""
 echo "Cleaning up temporary files..."
 rm -f "$DRIVER_FILE" "$META_FILE"
 
-# Final cleanup
 echo "Build completed. Exiting."
 echo ""
 

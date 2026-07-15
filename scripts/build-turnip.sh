@@ -261,7 +261,7 @@ cat <<EOF > "$META_FILE"
   "packageVersion": "R1-Optimized",
   "vendor": "Mesa3D",
   "driverVersion": "Vulkan 1.3",
-  "minApi": 34,
+  "minApi": 29,
   "libraryName": "vulkan.turnip.so",
   "features": {
     "optimizedFor": "Adreno 730",

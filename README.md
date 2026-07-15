@@ -13,5 +13,14 @@
 Made with ❤️ by excellency89
 
 </div>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Designed & Optimized by
+
+**excellency89**
+
+Turnip-730-Optimize Project
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 

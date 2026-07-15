@@ -3,6 +3,8 @@ name: Build Turnip - Adreno 730 Optimized
 on:
   workflow_dispatch:
 
+  release:
+    types: [published]
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -176,3 +178,23 @@ jobs:
             turnip_workdir/turnip-*.zip
             scripts/turnip_workdir/turnip-*.zip
           if-no-files-found: warn
+      - name: Find Release ZIP
+        if: success()
+        run: |
+          ZIP_FILE=$(find . -type f -name "turnip-*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "No Turnip ZIP found!"
+            exit 1
+          fi
+
+          echo "Found ZIP: $ZIP_FILE"
+          echo "ZIP_FILE=$ZIP_FILE" >> $GITHUB_ENV
+
+      - name: Upload ZIP to GitHub Release
+        if: success() && github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ZIP_FILE }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,4 +1,4 @@
-name: Build Turnip
+name: Build Turnip - Adreno 730 Optimized
 
 on:
   workflow_dispatch:
@@ -27,14 +27,9 @@ jobs:
             echo "✅ Found scripts/build-turnip.sh"
           elif [ -f "build-turnip.sh" ]; then
             echo "✅ Found build-turnip.sh"
-          elif [ -f "scripts/VanezZa.sh" ]; then
-            echo "✅ Found scripts/VanezZa.sh"
-          elif [ -f "VanezZa.sh" ]; then
-            echo "✅ Found VanezZa.sh"
           else
             echo "❌ No build script found!"
-            echo "Searching for .sh files..."
-            find . -name "*.sh" -type f 2>/dev/null || echo "No .sh files found anywhere"
+            find . -name "*.sh" -type f 2>/dev/null || echo "No .sh files found"
             exit 1
           fi
 
@@ -57,7 +52,6 @@ jobs:
             python-is-python3 \
             flex \
             bison \
-            glslang-tools \
             vulkan-tools \
             unzip \
             zip \
@@ -65,6 +59,12 @@ jobs:
             curl \
             git \
             ccache
+
+      - name: Install glslang-tools
+        run: |
+          sudo apt install -y glslang-tools || sudo apt install -y glslang-dev
+          which glslangValidator || echo "glslangValidator not found"
+          glslangValidator --version 2>/dev/null || echo "glslangValidator version check failed"
 
       - name: Install Latest Meson
         run: |
@@ -88,7 +88,13 @@ jobs:
           echo "===== NINJA ====="
           ninja --version
           echo ""
-          echo "===== NDK will be downloaded during build ====="
+          echo "===== GLSLANG ====="
+          which glslangValidator || echo "glslangValidator not found"
+          glslangValidator --version 2>/dev/null || echo "glslangValidator version check failed"
+          echo ""
+          echo "===== Adreno 730 Build Mode ====="
+          echo "🔧 Optimizations: -O3 -march=armv8.2a+fp16 -mcpu=cortex-x2 -ffast-math -funroll-loops"
+          echo "📦 Disabled: GL, EGL, GBM, X11, Wayland, LLVM"
 
       - name: Make build script executable
         run: |
@@ -98,12 +104,6 @@ jobs:
           elif [ -f "build-turnip.sh" ]; then
             chmod +x build-turnip.sh
             echo "✅ Made build-turnip.sh executable"
-          elif [ -f "scripts/VanezZa.sh" ]; then
-            chmod +x scripts/VanezZa.sh
-            echo "✅ Made scripts/VanezZa.sh executable"
-          elif [ -f "VanezZa.sh" ]; then
-            chmod +x VanezZa.sh
-            echo "✅ Made VanezZa.sh executable"
           else
             echo "❌ No build script found!"
             exit 1
@@ -115,19 +115,13 @@ jobs:
           export PATH="$HOME/.local/bin:$PATH"
           echo "Current directory: $(pwd)"
           echo ""
+          echo "🔥 Building Adreno 730 Optimized Driver..."
+          echo ""
           
           if [ -f "scripts/build-turnip.sh" ]; then
-            echo "Running scripts/build-turnip.sh..."
             cd scripts && ./build-turnip.sh
           elif [ -f "build-turnip.sh" ]; then
-            echo "Running build-turnip.sh..."
             ./build-turnip.sh
-          elif [ -f "scripts/VanezZa.sh" ]; then
-            echo "Running scripts/VanezZa.sh..."
-            cd scripts && ./VanezZa.sh
-          elif [ -f "VanezZa.sh" ]; then
-            echo "Running VanezZa.sh..."
-            ./VanezZa.sh
           else
             echo "❌ No build script found!"
             exit 1
@@ -140,13 +134,6 @@ jobs:
           echo "===== GENERATED FILES ====="
           echo "========================================="
           echo ""
-          echo "--- Current directory ---"
-          pwd
-          ls -la
-          echo ""
-          echo "--- scripts/ directory ---"
-          ls -la scripts/ 2>/dev/null || echo "scripts/ not found"
-          echo ""
           echo "--- ZIP files ---"
           find . -name "*.zip" -type f 2>/dev/null || echo "No zip files found"
           echo ""
@@ -155,16 +142,13 @@ jobs:
           echo ""
           echo "--- Workdir contents ---"
           ls -la turnip_workdir/ 2>/dev/null || echo "turnip_workdir not found"
+          ls -la scripts/turnip_workdir/ 2>/dev/null || echo "scripts/turnip_workdir not found"
           echo ""
           echo "--- Build log ---"
           if [ -f "build.log" ]; then
-            echo "===== BUILD LOG START ====="
-            cat build.log
-            echo "===== BUILD LOG END ====="
+            tail -100 build.log
           elif [ -f "scripts/build.log" ]; then
-            echo "===== BUILD LOG START (from scripts/) ====="
-            cat scripts/build.log
-            echo "===== BUILD LOG END ====="
+            tail -100 scripts/build.log
           else
             echo "build.log not found"
           fi
@@ -183,11 +167,11 @@ jobs:
             **/*.log
           if-no-files-found: warn
 
-      - name: Upload Turnip Driver
+      - name: Upload Turnip Driver (Adreno 730 Optimized)
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: turnip-25.1.0-R1-EMULATOR
+          name: turnip-25.1.0-R1-Adreno730-Optimized
           path: |
             turnip_workdir/turnip-*.zip
             scripts/turnip_workdir/turnip-*.zip

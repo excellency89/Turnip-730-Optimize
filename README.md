@@ -13,14 +13,25 @@
 Made with ❤️ by excellency89
 
 </div>
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Designed & Optimized by
+
+
+
+
+
+
+
+
+
+---
+
+## 👤 Author
 
 **excellency89**
 
 Turnip-730-Optimize Project
 
+Built with ❤️ for the Adreno 730 community.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 

@@ -9,7 +9,7 @@ nocolor='\033[0m'
 # Define Android NDK version and download URL
 ndkdir="android-ndk-r30-beta1"
 ndkver="https://dl.google.com/android/repository/${ndkdir}-linux.zip"
-sdkver="34"
+sdkver="29"
 
 # Define Mesa version and download URL
 mesadir="mesa-mesa-25.1.0"
@@ -170,7 +170,7 @@ echo "Generating build files with Meson (Adreno 730 Optimized)..."
 # =============================================
 # 🔥 Adreno 730 OPTIMIZATION FLAGS 🔥
 # =============================================
-OPTIMIZE_FLAGS="-O3 -march=armv8.2a+fp16 -mcpu=cortex-x2 -ffast-math -funroll-loops -fomit-frame-pointer -fno-stack-protector -fno-math-errno -DNDEBUG -D_FORTIFY_SOURCE=0"
+OPTIMIZE_FLAGS="-O3 -march=armv8.2a+fp16 -mtune=cortex-x2 -funroll-loops -fomit-frame-pointer -fno-math-errno -DNDEBUG"
 
 if ! meson setup build-android-aarch64 \
     --cross-file "$workdir/$mesadir/android-aarch64.txt" \
@@ -186,7 +186,7 @@ if ! meson setup build-android-aarch64 \
     -Dglx=disabled \
     -Dllvm=disabled \
     -Dshared-glapi=disabled \
-    -Dvalgrind=disabled
+    -Dvalgrind=disabled \
     -Dstrip=true \
     -Dc_args="$OPTIMIZE_FLAGS -Wno-unused-command-line-argument" \
     -Dcpp_args="$OPTIMIZE_FLAGS -Wno-unused-command-line-argument" \
@@ -261,11 +261,11 @@ cat <<EOF > "$META_FILE"
   "packageVersion": "R1-Optimized",
   "vendor": "Mesa3D",
   "driverVersion": "Vulkan 1.3",
-  "minApi": 29,
+  "minApi": $sdkver,
   "libraryName": "vulkan.turnip.so",
   "features": {
     "optimizedFor": "Adreno 730",
-    "flags": "-O3 -march=armv8.2a+fp16 -mcpu=cortex-x2 -ffast-math -funroll-loops"
+    "flags": "$OPTIMIZE_FLAGS"
   }
 }
 EOF
@@ -305,11 +305,11 @@ echo ""
 echo -e "$yellow Optimizations applied:$nocolor"
 echo "  • -O3 (High optimization)"
 echo "  • -march=armv8.2a+fp16 (Adreno 730 FP16 support)"
-echo "  • -mcpu=cortex-x2 (SD 8 Gen 1 optimized)"
-echo "  • -ffast-math (Faster math)"
+echo "  • -mtune=cortex-x2 (SD 8 Gen 1 scheduling, safe on A710/A510 too)"
 echo "  • -funroll-loops (Loop unrolling)"
 echo "  • -fomit-frame-pointer (Less overhead)"
 echo "  • -flto (Link Time Optimization)"
+echo "  • Stack protector + FORTIFY_SOURCE: left at NDK defaults (stability)"
 echo "  • Disabled: GLX, EGL, GBM, OS Mesa, LLVM"
 echo ""
 echo "  Finished at: $(date)"

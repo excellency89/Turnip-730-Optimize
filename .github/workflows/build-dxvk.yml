@@ -1,0 +1,63 @@
+name: Build DXVK
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt update
+
+          sudo apt install -y \
+            mingw-w64 \
+            gcc-mingw-w64 \
+            g++-mingw-w64 \
+            meson \
+            ninja-build \
+            glslang-tools \
+            python3 \
+            python3-pip \
+            libvulkan-dev \
+            vulkan-validationlayers-dev \
+            wine64 \
+            wine32
+
+      - name: Build x64
+        run: |
+          meson setup build64 \
+            --cross-file build-win64.txt
+
+          ninja -C build64
+
+      - name: Build x32
+        run: |
+          meson setup build32 \
+            --cross-file build-win32.txt
+
+          ninja -C build32
+
+      - name: Package
+        run: |
+          mkdir release
+
+          cp build64/src/*.dll release/ || true
+          cp build32/src/*.dll release/ || true
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DXVK
+          path: release
